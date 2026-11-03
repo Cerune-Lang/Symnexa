@@ -2,7 +2,7 @@
 
 [日本語](linking.ja.md) · [Documentation](../README.md)
 
-Symnexa will resolve symbols and relocations in object files and produce executable images. The first use case is the x86-64 ELF64 kernel for LiseOS. **A Rust implementation is being added.** Input formats and relocations remain deliberately limited.
+Symnexa will resolve symbols and relocations in object files and produce executable images. The first use case is the x86-64 ELF64 kernel for LiseOS. **An initial Rust implementation is available.** Input formats and relocations remain deliberately limited.
 
 ## Inputs and outputs
 

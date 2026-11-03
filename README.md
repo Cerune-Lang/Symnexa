@@ -4,7 +4,7 @@
 
 Symnexaは、[Cerune](https://github.com/Cerune-Lang/Cerune)や[Sashimi](https://github.com/Cerune-Lang/Sashimi)が生成したオブジェクトファイルを結合するための、実験的なリンカのプロジェクトです。
 
-最初の用途は、[LiseOS](https://github.com/Cerune-Lang/LiseOS)のx86-64 ELF64カーネルをリンクすることです。**Rust製のELF64リンカを実装中です。** LiseOSの通常ビルドは引き続き`ld.lld`を使用します。Symnexaは独立したCIでLiseOSの起動を検証します。
+最初の用途は、[LiseOS](https://github.com/Cerune-Lang/LiseOS)のx86-64 ELF64カーネルをリンクすることです。**Rust製のELF64リンカの初期実装があります。** LiseOSの通常ビルドは引き続き`ld.lld`を使用します。Symnexaは独立したCIでLiseOSの起動を検証します。
 
 ## 役割
 
