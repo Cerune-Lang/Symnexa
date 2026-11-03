@@ -449,4 +449,58 @@ mod tests {
         let img=link_liseos(&[obj]).unwrap();
         assert_eq!(&img[0x1000..0x1004],&(-4i32).to_le_bytes());
     }
+
+    #[test]
+    fn cross_object_symbol_and_pc32_relocation() {
+        let mut caller = fixture();
+        caller.symbols.push(Symbol {
+            name: "helper".into(), section: SHN_UNDEF, value: 0,
+            size: 0, info: 0x10, other: 0,
+        });
+        caller.relocations.push(Relocation {
+            target_section: 1, offset: 0, symbol: 2, kind: 2, addend: -4,
+        });
+        let mut callee = fixture();
+        callee.name = "helper.o".into();
+        callee.symbols[1].name = "helper".into();
+        let result = link_liseos(&[caller, callee]).unwrap();
+        // Input sections have 16-byte alignment: helper is 16 bytes after main.
+        assert_eq!(&result[PAGE as usize..PAGE as usize + 4], &(12i32).to_le_bytes());
+        assert!(result.windows(7).any(|bytes| bytes == b"helper\0"));
+    }
+
+    #[test]
+    fn unresolved_symbol_is_rejected() {
+        let mut caller = fixture();
+        caller.symbols.push(Symbol {
+            name: "missing".into(), section: SHN_UNDEF, value: 0,
+            size: 0, info: 0x10, other: 0,
+        });
+        caller.relocations.push(Relocation {
+            target_section: 1, offset: 0, symbol: 2, kind: 2, addend: -4,
+        });
+        assert!(link_liseos(&[caller]).unwrap_err().contains("unresolved symbol missing"));
+    }
+
+    #[test]
+    fn alignment_and_bss_are_preserved() {
+        let mut object = fixture();
+        object.sections.push(Section {
+            name: ".data".into(), ty: SHT_PROGBITS, flags: SHF_ALLOC | SHF_WRITE,
+            align: 8, size: 8, data: vec![1,2,3,4,5,6,7,8],
+        });
+        object.sections.push(Section {
+            name: ".bss".into(), ty: SHT_NOBITS, flags: SHF_ALLOC | SHF_WRITE,
+            align: 16, size: 64, data: vec![],
+        });
+        let result = link_liseos(&[object]).unwrap();
+        let phnum = u16::from_le_bytes(result[56..58].try_into().unwrap());
+        assert_eq!(phnum, 2);
+        let data_program = 64 + 56; // second program header
+        let flags = u32::from_le_bytes(result[data_program + 4..data_program + 8].try_into().unwrap());
+        let filesz = u64::from_le_bytes(result[data_program + 32..data_program + 40].try_into().unwrap());
+        let memsz = u64::from_le_bytes(result[data_program + 40..data_program + 48].try_into().unwrap());
+        assert_eq!(flags, 6);
+        assert!(memsz > filesz);
+    }
 }
