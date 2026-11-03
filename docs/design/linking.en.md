@@ -2,7 +2,7 @@
 
 [日本語](linking.ja.md) · [Documentation](../README.md)
 
-Symnexa will resolve symbols and relocations in object files and produce executable images. The first use case is the x86-64 ELF64 kernel for LiseOS. **This document describes the intended implementation; no linker is implemented yet.**
+Symnexa will resolve symbols and relocations in object files and produce executable images. The first use case is the x86-64 ELF64 kernel for LiseOS. **A Rust implementation is being added.** Input formats and relocations remain deliberately limited.
 
 ## Inputs and outputs
 
@@ -27,7 +27,7 @@ File format and target ABI are separate concerns. COFF input can be investigated
 5. Emit ELF and `PT_LOAD` headers and set the entry address.
 6. Validate unresolved references and segment layout.
 
-Start with the relocation types actually emitted by Sashimi for the LiseOS kernel rather than implementing hypothetical types.
+The Rust implementation handles `R_X86_64_64`, `R_X86_64_PC32`, `R_X86_64_PLT32`, `R_X86_64_32`, and `R_X86_64_32S`, and rejects unsupported types.
 
 ## Segment placement
 
@@ -47,5 +47,9 @@ Limine-specific data should be selected explicitly for the LiseOS use case, not 
 - Validate symbol addresses, program headers, and load permissions.
 - Compare entry, segments, and Limine markers against `ld.lld` output.
 - Boot LiseOS in QEMU and confirm entry into the Cerune `main` through GDB.
+
+## Moving to Cerune
+
+The initial linker is a host-side Rust program. Once Cerune supports binary file input/output and byte-array manipulation, the ELF reader and relocation code can move into Cerune. Compare symbol addresses, ELF output, and QEMU boot results against the Rust version.
 
 [Boot verification details](../integration/liseos.en.md)
