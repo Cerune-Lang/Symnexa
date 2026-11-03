@@ -1,0 +1,9 @@
+[package]
+name = "symnexa"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Experimental x86-64 ELF linker for Cerune and LiseOS"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
