@@ -35,6 +35,17 @@ cerune run examples/pc32/pair.ceru --file-root pair-input
 
 Each input has one executable section containing the definitions used by the example. The pair has one relocation in total. Each input and the merged code are limited to 64 KiB. Both `GLOBAL` and `WEAK` definitions participate in name resolution. As in Rust, duplicate public definitions stop the example before it saves the code. For an unresolved or duplicate symbol it prints the reason and the bytes of the name. The comparison exercises reversed order, a renamed reference, a weak definition, a name with a different suffix, a local-only definition, and a duplicate public name.
 
+## Save an ELF with an entry point and a load address
+
+With the same `first.o` and `second.o`, run [pair_exec.ceru](pair_exec.ceru) to create `pair-input/pair.elf`.
+
+```sh
+cerune run examples/pc32/pair_exec.ceru --file-root pair-input
+readelf -h -l pair-input/pair.elf
+```
+
+The entry point is the address of `main` in the table above. For caller-first order, the `LOAD` row maps 21 bytes at file offset `0x1000` to address `0xffffffff80001000`. The example writes one readable, executable segment and reports an error before saving if another input section requires space in memory. The test compares the entry, every field of the executable segment header, and all relocated bytes with the Rust ELF. Booting LiseOS will also require a segment containing the Limine requests.
+
 ## Run the comparison
 
 From the Symnexa root on Linux, use Rust, Python 3, Clang, GNU objcopy and nm, and a Cerune compiler with binary file input and output. CI uses [Cerune commit `25a6f8f`](https://github.com/Cerune-Lang/Cerune/commit/25a6f8f2c6b76c411bedeeb61c4b1a759f37fa11). The initial Rust reference was [Symnexa commit `70489b5`](https://github.com/Cerune-Lang/Symnexa/commit/70489b57c072d47776bc6d8d6f578c54520b37bb).

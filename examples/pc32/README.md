@@ -35,6 +35,17 @@ cerune run examples/pc32/pair.ceru --file-root pair-input
 
 この例は各入力に1つの実行可能セクションを使い、その中で定義された名前を扱います。再配置は2入力合わせて1件、入力と保存するコードの上限はそれぞれ64 KiBです。`GLOBAL` と `WEAK` の定義を名前解決に使い、Rust版と同じく同名の公開定義が複数あれば保存前に終了します。未解決や重複のときは理由と該当する名前のバイト列を表示します。比較試験では、入力順の反転、シンボル名の変更、弱い定義、名前の末尾だけが異なる定義、同名のローカル定義、公開名の重複を確認します。
 
+## 入口とロード先を持つELFを保存する
+
+同じ `first.o` と `second.o` を使って次を実行すると、[pair_exec.ceru](pair_exec.ceru) が `pair-input/pair.elf` を新規保存します。
+
+```sh
+cerune run examples/pc32/pair_exec.ceru --file-root pair-input
+readelf -h -l pair-input/pair.elf
+```
+
+`Entry point address` は上表の `main`、`LOAD` 行はファイルのどのバイトをどのアドレスへ置くかを示します。先頭の入力順なら、ファイルのオフセット `0x1000` から21バイトが `0xffffffff80001000` に対応します。読み取り・実行用のセグメント1個でコードを表す例なので、他に配置すべきデータがある入力は保存前に診断します。比較試験はRust版ELFから同じ権限のセグメントを選び、入口、ロード先、長さ、整列、再配置後の全バイトを照合します。LiseOSの起動には、今後Limineの要求データを含むセグメントも必要です。
+
 ## 実行する
 
 LinuxでRust、Python 3、Clang、GNU objcopy・nm、バイナリファイルを読めるCeruneを用意し、Symnexaのルートで実行します。CIは [Ceruneのコミット `25a6f8f`](https://github.com/Cerune-Lang/Cerune/commit/25a6f8f2c6b76c411bedeeb61c4b1a759f37fa11) を使います。Rust版の比較を始めた時点のコミットは [`70489b5`](https://github.com/Cerune-Lang/Symnexa/commit/70489b57c072d47776bc6d8d6f578c54520b37bb) です。

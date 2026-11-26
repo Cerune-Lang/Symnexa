@@ -1,0 +1,3 @@
+import "pair.ceru" as pair;
+
+fn main() -> void { pair::run_pair(true); }

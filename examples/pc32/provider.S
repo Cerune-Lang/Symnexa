@@ -16,3 +16,7 @@ DEF:
 .globl shared
 shared:
     .byte 0xa4
+#ifdef EXTRA_DATA
+.data
+    .byte 0x7f
+#endif

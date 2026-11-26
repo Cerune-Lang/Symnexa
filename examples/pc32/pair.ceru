@@ -7,13 +7,21 @@ fn is_main(name: [u8]) -> bool {
     return array_len(name) == 4 && name[0] == 109 && name[1] == 97 && name[2] == 105 && name[3] == 110;
 }
 
-fn link(data: [[u8]; 2], objects: [elf::Object; 2]) -> void {
+fn link(data: [[u8]; 2], objects: [elf::Object; 2], executable: bool) -> void {
     if objects[0].has_rela == objects[1].has_rela { print("expected one relocation across two objects"); return; }
     mut caller: i64 = 0;
     if objects[1].has_rela { caller = 1; }
     mut starts: [u64; 2] = [0, 0];
     mut total: u64 = 0;
     for (mut i: i64 = 0; i < 2; i = i + 1) {
+        if executable {
+            for (mut j: u64 = 1; j < objects[i].count; j = j + 1) {
+                s: elf::Section = elf::section(data[i], objects[i].table, j);
+                if j != objects[i].text_index && (s.flags & 2) != 0 && s.size != 0 {
+                    print("expected only text in the load image"); return;
+                }
+            }
+        }
         text: elf::Section = objects[i].text;
         if text.alignment > 1 && (text.alignment & (text.alignment - 1)) != 0 {
             print("invalid text alignment"); return;
@@ -96,10 +104,10 @@ fn link(data: [[u8]; 2], objects: [elf::Object; 2]) -> void {
     }
     place: u64 = starts[caller] + field;
     addend: i64 = elf::signed64(elf::le(data[caller], record + 16, 8));
-    elf::save_pc32(merged, place, address - i64(place), addend, u64(entry));
+    elf::save_pc32(merged, place, address - i64(place), addend, u64(entry), executable);
 }
 
-fn main() -> void {
+pub fn run_pair(executable: bool) -> void {
     first: [u8] = fs::read_bytes("first.o", 65536);
     match elf::inspect(first) {
         elf::Inspection::Invalid { reason: why } => { print(why); },
@@ -107,8 +115,10 @@ fn main() -> void {
             second: [u8] = fs::read_bytes("second.o", 65536);
             match elf::inspect(second) {
                 elf::Inspection::Invalid { reason: why } => { print(why); },
-                elf::Inspection::Valid { object: b } => { link([first, second], [a, b]); },
+                elf::Inspection::Valid { object: b } => { link([first, second], [a, b], executable); },
             }
         },
     }
 }
+
+fn main() -> void { run_pair(false); }
