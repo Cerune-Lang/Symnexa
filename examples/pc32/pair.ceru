@@ -1,0 +1,114 @@
+import "std:fs::bytes" as fs;
+import "elf.ceru" as elf;
+
+type Definition { name: [u8], offset: u64 }
+
+fn is_main(name: [u8]) -> bool {
+    return array_len(name) == 4 && name[0] == 109 && name[1] == 97 && name[2] == 105 && name[3] == 110;
+}
+
+fn link(data: [[u8]; 2], objects: [elf::Object; 2]) -> void {
+    if objects[0].has_rela == objects[1].has_rela { print("expected one relocation across two objects"); return; }
+    mut caller: i64 = 0;
+    if objects[1].has_rela { caller = 1; }
+    mut starts: [u64; 2] = [0, 0];
+    mut total: u64 = 0;
+    for (mut i: i64 = 0; i < 2; i = i + 1) {
+        text: elf::Section = objects[i].text;
+        if text.alignment > 1 && (text.alignment & (text.alignment - 1)) != 0 {
+            print("invalid text alignment"); return;
+        }
+        starts[i] = elf::align_up(total, text.alignment);
+        if !elf::fits(starts[i], text.size, 65536) { print("merged text exceeds 64 KiB"); return; }
+        total = starts[i] + text.size;
+    }
+
+    obj: elf::Object = objects[caller];
+    record: i64 = i64(obj.rela.offset);
+    field: u64 = elf::le(data[caller], record, 8);
+    info: u64 = elf::le(data[caller], record + 8, 8);
+    symbol: u64 = info >> 32;
+    if (info & 4294967295u64) != 2 || !elf::fits(field, 4, obj.text.size) || symbol == 0 || symbol >= obj.sym.size / 24 {
+        print("invalid PC32 relocation"); return;
+    }
+
+    empty: [u8] = array_repeat::<u8>(u8(0), 0);
+    mut wanted: [u8] = empty;
+    capacity: i64 = i64((objects[0].sym.size + objects[1].sym.size) / 24);
+    mut exports: [Definition] = array_repeat::<Definition>(Definition { name: empty, offset: 0 }, capacity);
+    mut used: i64 = 0;
+    mut entry: i64 = -1;
+    for (mut i: i64 = 0; i < 2; i = i + 1) {
+        current: elf::Object = objects[i];
+        bytes: [u8] = data[i];
+        for (mut j: u64 = 1; j < current.sym.size / 24; j = j + 1) {
+            at: i64 = i64(current.sym.offset + 24 * j);
+            section: u64 = elf::le(bytes, at + 6, 2);
+            binding: u8 = bytes[at + 4] >> 4;
+            referenced: bool = i == caller && j == symbol;
+            if section == 0 && !referenced { continue; }
+            start: u64 = elf::le(bytes, at, 4);
+            mut end: u64 = start;
+            while end < current.names.size && bytes[i64(current.names.offset + end)] != 0 { end = end + 1; }
+            if end >= current.names.size { print("invalid symbol name"); return; }
+            mut name: [u8] = array_repeat::<u8>(u8(0), i64(end - start));
+            for (mut k: i64 = 0; k < array_len(name); k = k + 1) {
+                name[k] = bytes[i64(current.names.offset + start) + k];
+            }
+            if referenced {
+                if section != 0 || array_len(name) == 0 { print("expected a named undefined reference"); return; }
+                wanted = name;
+                continue;
+            }
+            public_symbol: bool = binding == 1 || binding == 2;
+            main_symbol: bool = is_main(name);
+            if array_len(name) == 0 || (!public_symbol && !main_symbol) { continue; }
+            value: u64 = elf::le(bytes, at + 8, 8);
+            if section != current.text_index || value > current.text.size {
+                print("expected a definition in text"); return;
+            }
+            offset: u64 = starts[i] + value;
+            if public_symbol {
+                for (mut k: i64 = 0; k < used; k = k + 1) {
+                    if exports[k].name == name { print("duplicate global symbol"); print(name); return; }
+                }
+                exports[used] = Definition { name: name, offset: offset };
+                used = used + 1;
+            }
+            if main_symbol {
+                if entry >= 0 || value == current.text.size { print("invalid main symbol"); return; }
+                entry = i64(offset);
+            }
+        }
+    }
+    if entry < 0 { print("missing main in text"); return; }
+    mut address: i64 = -1;
+    for (mut k: i64 = 0; k < used; k = k + 1) {
+        if exports[k].name == wanted { address = i64(exports[k].offset); break; }
+    }
+    if address < 0 { print("unresolved symbol"); print(wanted); return; }
+
+    mut merged: [u8] = array_repeat::<u8>(u8(0), i64(total));
+    for (mut i: i64 = 0; i < 2; i = i + 1) {
+        for (mut k: i64 = 0; k < i64(objects[i].text.size); k = k + 1) {
+            merged[i64(starts[i]) + k] = data[i][i64(objects[i].text.offset) + k];
+        }
+    }
+    place: u64 = starts[caller] + field;
+    addend: i64 = elf::signed64(elf::le(data[caller], record + 16, 8));
+    elf::save_pc32(merged, place, address - i64(place), addend, u64(entry));
+}
+
+fn main() -> void {
+    first: [u8] = fs::read_bytes("first.o", 65536);
+    match elf::inspect(first) {
+        elf::Inspection::Invalid { reason: why } => { print(why); },
+        elf::Inspection::Valid { object: a } => {
+            second: [u8] = fs::read_bytes("second.o", 65536);
+            match elf::inspect(second) {
+                elf::Inspection::Invalid { reason: why } => { print(why); },
+                elf::Inspection::Valid { object: b } => { link([first, second], [a, b]); },
+            }
+        },
+    }
+}
