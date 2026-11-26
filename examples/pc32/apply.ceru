@@ -13,15 +13,39 @@ fn fits(offset: u64, size: u64, end: u64) -> bool {
 }
 
 type Section {
-    kind: u64, flags: u64, offset: u64, size: u64, link: u64, info: u64, stride: u64
+    kind: u64, flags: u64, offset: u64, size: u64, link: u64, info: u64, alignment: u64, stride: u64
 }
 fn section(data: [u8], table: u64, index: u64) -> Section {
     at: i64 = i64(table + index * 64);
     return Section {
         kind: le(data, at + 4, 4), flags: le(data, at + 8, 8),
         offset: le(data, at + 24, 8), size: le(data, at + 32, 8),
-        link: le(data, at + 40, 4), info: le(data, at + 44, 4), stride: le(data, at + 56, 8)
+        link: le(data, at + 40, 4), info: le(data, at + 44, 4), alignment: le(data, at + 48, 8),
+        stride: le(data, at + 56, 8)
     };
+}
+
+// Callers supply a power of two, or zero for a section with no alignment requirement.
+fn align_up(size: u64, alignment: u64) -> u64 {
+    if alignment <= 1 { return size; }
+    return size + (alignment - size % alignment) % alignment;
+}
+
+// Place read-only PROGBITS sections in ELF section-table order up to the symbol's section.
+fn rodata_offset(data: [u8], table: u64, wanted: u64) -> i64 {
+    mut size: u64 = 0;
+    for (mut i: u64 = 1; i <= wanted; i = i + 1) {
+        s: Section = section(data, table, i);
+        if s.kind == 1 && (s.flags & 7) == 2 {
+            if !fits(s.offset, s.size, u64(array_len(data))) { return -1; }
+            if s.alignment > 1 && (s.alignment & (s.alignment - 1)) != 0 { return -1; }
+            start: u64 = align_up(size, s.alignment);
+            if !fits(start, s.size, 67108864) { return -1; }
+            if i == wanted { return i64(start); }
+            size = start + s.size;
+        }
+    }
+    return -1;
 }
 
 fn signed64(bits: u64) -> i64 {
@@ -82,7 +106,18 @@ fn main() -> void {
     if !fits(place, 4, text.size) || index >= sym.size / 24 { print("invalid relocation offset or symbol"); return; }
     ref_at: i64 = i64(sym.offset + index * 24);
     value: u64 = le(data, ref_at + 8, 8);
-    if le(data, ref_at + 6, 2) != text_index || value > text.size { print("expected a symbol defined in text"); return; }
+    definition: u64 = le(data, ref_at + 6, 2);
+    if definition == 0 || definition >= count { print("expected a defined symbol"); return; }
+    owner: Section = section(data, table, definition);
+    if value > owner.size { print("symbol outside section"); return; }
+
+    // Subtract offsets from the text base so S - P fits in a signed integer.
+    mut symbol_offset: u64 = value;
+    if definition != text_index {
+        start: i64 = rodata_offset(data, table, definition);
+        if start < 0 { print("expected a placed read-only PROGBITS section"); return; }
+        symbol_offset = align_up(text.size, 4096) + u64(start) + value;
+    }
 
     mut main_offset: i64 = -1;
     for (mut i: u64 = 1; i < sym.size / 24; i = i + 1) {
@@ -100,8 +135,7 @@ fn main() -> void {
     }
     if main_offset < 0 { print("missing main in text"); return; }
 
-    // S and P share the text base. Check before adding the signed ELF64 addend.
-    delta: i64 = i64(value) - i64(place);
+    delta: i64 = i64(symbol_offset) - i64(place);
     addend: i64 = signed64(le(data, record + 16, 8));
     if addend < -2147483648 - delta || addend > 2147483647 - delta { print("PC32 overflow"); return; }
     displacement: i64 = delta + addend;

@@ -26,6 +26,13 @@ def compare(args, root, case, defines, main_offset, field, displacement):
         entry = struct.unpack_from("<Q", elf.read_bytes(), 24)[0]
         if entry != TEXT_BASE + main_offset:
             raise RuntimeError(f"{case}: unexpected Rust entry {entry:#x}")
+        # All successful fixtures use anchor - 4. Recover S from P and the displacement
+        # and compare it with the symbol address recorded by the Rust linker.
+        symbols = subprocess.check_output([args.nm, "-P", elf], text=True)
+        anchors = [int(row[2], 16) for line in symbols.splitlines()
+                   if (row := line.split()) and row[0] == "anchor"]
+        if anchors != [TEXT_BASE + field + displacement + 4]:
+            raise RuntimeError(f"{case}: unexpected Rust anchor address {anchors}")
         reference = root / "rust.text"
         subprocess.run([args.objcopy, "-O", "binary", "--only-section=.text", elf, reference], check=True)
         text = reference.read_bytes()
@@ -47,7 +54,9 @@ def compare(args, root, case, defines, main_offset, field, displacement):
     if displacement is None:
         print(f"{case}: Rust and all four Cerune routes rejected the relocation")
     else:
-        print(f"{case}: entry={entry:#x} displacement={displacement} text={text.hex(' ')}")
+        patch = text[field:field + 4].hex(" ")
+        print(f"{case}: entry={entry:#x} anchor={anchors[0]:#x} displacement={displacement} "
+              f"text_size={len(text)} patch={patch}")
 
 
 def main():
@@ -56,10 +65,15 @@ def main():
     parser.add_argument("--symnexa", required=True)
     parser.add_argument("--clang", default="clang")
     parser.add_argument("--objcopy", default="objcopy")
+    parser.add_argument("--nm", default="nm")
     args = parser.parse_args()
     for case, defines, main_offset, field, displacement in [
         ("forward", [], 1, 2, 2),
         ("backward", ["-DBACKWARD"], 2, 3, -7),
+        ("rodata", ["-DRODATA"], 1, 2, 4109),
+        ("rodata-page-end", ["-DRODATA", "-DTEXT_SIZE=4096"], 1, 2, 4109),
+        ("rodata-next-page", ["-DRODATA", "-DTEXT_SIZE=4097"], 1, 2, 8205),
+        ("rodata-overflow", ["-DRODATA", "-DPLACEMENT_OVERFLOW"], 1, 2, None),
         ("overflow", ["-DOVERFLOW"], 1, 2, None),
         ("underflow", ["-DBACKWARD", "-DUNDERFLOW"], 2, 3, None),
     ]:
