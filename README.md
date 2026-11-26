@@ -31,6 +31,8 @@ cargo run -- link --liseos -o liseos.elf kernel.o
 
 ## 資料
 
+- [Ceruneで再配置を1件適用し、Rust版と照合する例](examples/pc32/README.md)
+
 - [ドキュメント一覧](docs/README.md)
 - [リンカの実装方針](docs/design/linking.ja.md) — 入力、シンボル解決、配置、出力
 - [LiseOSとの連携](docs/integration/liseos.ja.md) — 現在の`ld.lld`と検証方法

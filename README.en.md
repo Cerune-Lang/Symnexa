@@ -31,6 +31,8 @@ cargo run -- link --liseos -o liseos.elf kernel.o
 
 ## Documentation
 
+- [Apply one relocation in Cerune and compare it with the Rust linker](examples/pc32/README.en.md)
+
 - [Documentation index](docs/README.md)
 - [Linker implementation](docs/design/linking.en.md) — inputs, symbols, layout, and output
 - [LiseOS integration](docs/integration/liseos.en.md) — current `ld.lld` setup and validation

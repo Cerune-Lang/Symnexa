@@ -50,6 +50,6 @@ LiseOSでは現状、`linker.ld`の`QUAD`でLimineリクエスト開始・終了
 
 ## Ceruneへの移植
 
-RustのCLIはホスト上で動く初期実装です。Ceruneでバイナリファイル読込・書込とバイト列操作が可能になったら、ELF解析とリロケーション計算をCeruneに移します。既存のRust版と同じオブジェクトを入力し、シンボルアドレスと生成ELF、QEMUの起動結果を比較します。
+CeruneでELF64オブジェクトを読み、同じコードセクション内の `R_X86_64_PC32` を1件適用する例を追加しました。Rust版が生成したELFの入口アドレスと `.text` 全体を照合します。次に検証するのは、複数の入力セクションを配置したときのシンボルアドレスです。
 
-[具体的な起動検証](../integration/liseos.ja.md)
+[CeruneとRustの比較手順](../../examples/pc32/README.md) · [具体的な起動検証](../integration/liseos.ja.md)

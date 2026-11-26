@@ -51,3 +51,26 @@ jobs:
             LiseOS/build/qemu-debug.log
             LiseOS/build/qemu-monitor-dump.log
           if-no-files-found: ignore
+
+  cerune-pc32:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: Symnexa
+      - uses: actions/checkout@v4
+        with:
+          repository: Cerune-Lang/Cerune
+          ref: 25a6f8f2c6b76c411bedeeb61c4b1a759f37fa11
+          path: Cerune
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build both command-line tools
+        run: |
+          cargo build --manifest-path Symnexa/Cargo.toml
+          cargo build --locked --manifest-path Cerune/Cargo.toml --bin cerune
+      - name: Compare the entry and relocated text
+        run: |
+          python3 Symnexa/examples/pc32/compare.py \
+            --cerune Cerune/target/debug/cerune \
+            --symnexa Symnexa/target/debug/symnexa
