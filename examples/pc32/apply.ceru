@@ -1,0 +1,120 @@
+import "std:fs::bytes" as fs;
+
+fn le(data: [u8], at: i64, width: i64) -> u64 {
+    mut n: u64 = 0;
+    for (mut i: i64 = width; i > 0; i = i - 1) {
+        n = (n << 8) | u64(data[at + i - 1]);
+    }
+    return n;
+}
+
+fn fits(offset: u64, size: u64, end: u64) -> bool {
+    return offset <= end && size <= end - offset;
+}
+
+type Section {
+    kind: u64, flags: u64, offset: u64, size: u64, link: u64, info: u64, stride: u64
+}
+fn section(data: [u8], table: u64, index: u64) -> Section {
+    at: i64 = i64(table + index * 64);
+    return Section {
+        kind: le(data, at + 4, 4), flags: le(data, at + 8, 8),
+        offset: le(data, at + 24, 8), size: le(data, at + 32, 8),
+        link: le(data, at + 40, 4), info: le(data, at + 44, 4), stride: le(data, at + 56, 8)
+    };
+}
+
+fn signed64(bits: u64) -> i64 {
+    if (bits >> 63) != 0 { return -1 - i64(18446744073709551615u64 - bits); }
+    return i64(bits);
+}
+
+fn main() -> void {
+    data: [u8] = fs::read_bytes("input.o", 65536);
+    end: u64 = u64(array_len(data));
+    if end < 64 || data[0] != 127 || data[1] != 69 || data[2] != 76 || data[3] != 70
+        || data[4] != 2 || data[5] != 1 || le(data, 16, 2) != 1 || le(data, 18, 2) != 62 {
+        print("expected x86-64 little-endian ET_REL");
+        return;
+    }
+    table: u64 = le(data, 40, 8);
+    count: u64 = le(data, 60, 2);
+    if table < 64 || count == 0 || le(data, 58, 2) != 64 || !fits(table, count * 64, end) {
+        print("invalid section table");
+        return;
+    }
+    mut text_index: u64 = 0;
+    mut rela_index: u64 = 0;
+    for (mut i: u64 = 1; i < count; i = i + 1) {
+        s: Section = section(data, table, i);
+        if (s.flags & 6) == 6 {
+            if s.kind != 1 || (s.flags & 1) != 0 || text_index != 0 {
+                print("expected one executable PROGBITS section");
+                return;
+            }
+            text_index = i;
+        }
+        if s.kind == 9 || (s.kind == 4 && rela_index != 0) {
+            print("expected one RELA section");
+            return;
+        }
+        if s.kind == 4 { rela_index = i; }
+    }
+    if text_index == 0 || rela_index == 0 { print("missing text or RELA section"); return; }
+    text: Section = section(data, table, text_index);
+    rela: Section = section(data, table, rela_index);
+    if !fits(text.offset, text.size, end) || rela.info != text_index || rela.link >= count
+        || rela.stride != 24 || rela.size != 24 || !fits(rela.offset, rela.size, end) {
+        print("expected one relocation into text");
+        return;
+    }
+    sym: Section = section(data, table, rela.link);
+    if sym.kind != 2 || sym.stride != 24 || sym.size % 24 != 0 || sym.link >= count
+        || !fits(sym.offset, sym.size, end) { print("invalid symbol table"); return; }
+    names: Section = section(data, table, sym.link);
+    if names.kind != 3 || !fits(names.offset, names.size, end) { print("invalid string table"); return; }
+
+    record: i64 = i64(rela.offset);
+    place: u64 = le(data, record, 8);
+    info: u64 = le(data, record + 8, 8);
+    index: u64 = info >> 32;
+    if (info & 4294967295u64) != 2 { print("expected R_X86_64_PC32"); return; }
+    if !fits(place, 4, text.size) || index >= sym.size / 24 { print("invalid relocation offset or symbol"); return; }
+    ref_at: i64 = i64(sym.offset + index * 24);
+    value: u64 = le(data, ref_at + 8, 8);
+    if le(data, ref_at + 6, 2) != text_index || value > text.size { print("expected a symbol defined in text"); return; }
+
+    mut main_offset: i64 = -1;
+    for (mut i: u64 = 1; i < sym.size / 24; i = i + 1) {
+        at: i64 = i64(sym.offset + i * 24);
+        name: u64 = le(data, at, 4);
+        if le(data, at + 6, 2) == text_index && fits(name, 5, names.size) {
+            pos: i64 = i64(names.offset + name);
+            if data[pos] == 109 && data[pos + 1] == 97 && data[pos + 2] == 105
+                && data[pos + 3] == 110 && data[pos + 4] == 0 {
+                offset: u64 = le(data, at + 8, 8);
+                if main_offset >= 0 || offset >= text.size { print("invalid main symbol"); return; }
+                main_offset = i64(offset);
+            }
+        }
+    }
+    if main_offset < 0 { print("missing main in text"); return; }
+
+    // S and P share the text base. Check before adding the signed ELF64 addend.
+    delta: i64 = i64(value) - i64(place);
+    addend: i64 = signed64(le(data, record + 16, 8));
+    if addend < -2147483648 - delta || addend > 2147483647 - delta { print("PC32 overflow"); return; }
+    displacement: i64 = delta + addend;
+    mut word: i64 = displacement;
+    if word < 0 { word = word + 4294967296; }
+    mut patched: [u8] = array_repeat::<u8>(u8(0), i64(text.size));
+    for (mut i: i64 = 0; i < array_len(patched); i = i + 1) { patched[i] = data[i64(text.offset) + i]; }
+    for (mut i: i64 = 0; i < 4; i = i + 1) {
+        patched[i64(place) + i] = u8(word & 255);
+        word = word >> 8;
+    }
+    fs::write_bytes_new("text.bin", patched, 65536);
+    // LiseOS profile: image base 0xffffffff80000000; text starts one 4096-byte page later.
+    print(18446744071562067968u64 + 4096 + u64(main_offset));
+    print(displacement);
+}

@@ -50,6 +50,6 @@ Limine-specific data should be selected explicitly for the LiseOS use case, not 
 
 ## Moving to Cerune
 
-The initial linker is a host-side Rust program. Once Cerune supports binary file input/output and byte-array manipulation, the ELF reader and relocation code can move into Cerune. Compare symbol addresses, ELF output, and QEMU boot results against the Rust version.
+The Cerune example reads an ELF64 object and applies one `R_X86_64_PC32` within its code section. It compares the entry address and the entire `.text` with the ELF produced by the Rust linker. The next placement test will resolve symbols across input sections.
 
-[Boot verification details](../integration/liseos.en.md)
+[Compare Cerune and Rust](../../examples/pc32/README.en.md) · [Boot verification details](../integration/liseos.en.md)
