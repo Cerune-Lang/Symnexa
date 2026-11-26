@@ -50,6 +50,6 @@ Limine-specific data should be selected explicitly for the LiseOS use case, not 
 
 ## Moving to Cerune
 
-The Cerune example applies one `R_X86_64_PC32` from code to code or read-only data within one ELF64 object. It places read-only input sections in section-table order using their individual alignments to locate the referenced symbol. The comparison checks the entry, symbol address and entire `.text` against the Rust ELF. The next case will reference a symbol defined in a second object.
+The Cerune example applies one `R_X86_64_PC32` from code to code or read-only data within one ELF64 object. It places read-only input sections in section-table order using their individual alignments to locate the referenced symbol. The comparison checks the entry, symbol address and entire `.text` against the Rust ELF. The two-input example resolves a definition by name in another object and compares the entry and patched code in both input orders.
 
 [Compare Cerune and Rust](../../examples/pc32/README.en.md) · [Boot verification details](../integration/liseos.en.md)
