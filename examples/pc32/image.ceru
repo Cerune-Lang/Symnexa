@@ -1,0 +1,32 @@
+import "std:fs::bytes" as fs;
+
+// Offsets follow Elf64_Ehdr and Elf64_Phdr. Unused fields stay zero.
+type Field { at: i64, width: i64, value: u64 }
+fn field(at: i64, width: i64, value: u64) -> Field {
+    return Field { at: at, width: width, value: value };
+}
+
+pub fn save(text: [u8], entry: u64, text_base: u64) -> void {
+    size: i64 = array_len(text);
+    mut image: [u8] = array_repeat::<u8>(u8(0), 4096 + size);
+    ident: [u8; 7] = [127, 69, 76, 70, 2, 1, 1]; // ELF64, little-endian, version 1
+    for (mut i: i64 = 0; i < 7; i = i + 1) { image[i] = ident[i]; }
+    fields: [Field; 16] = [
+        field(16, 2, 2), field(18, 2, 62), field(20, 4, 1), // ET_EXEC, x86-64, version
+        field(24, 8, entry), field(32, 8, 64), // entry, program header offset
+        field(52, 2, 64), field(54, 2, 56), field(56, 2, 1), // header sizes and count
+        field(64, 4, 1), field(68, 4, 5), // PT_LOAD, PF_R | PF_X
+        field(72, 8, 4096), field(80, 8, text_base), field(88, 8, text_base),
+        field(96, 8, u64(size)), field(104, 8, u64(size)), field(112, 8, 4096)
+    ];
+    for (mut i: i64 = 0; i < 16; i = i + 1) {
+        f: Field = fields[i];
+        mut bits: u64 = f.value;
+        for (mut j: i64 = 0; j < f.width; j = j + 1) {
+            image[f.at + j] = u8(bits & 255);
+            bits = bits >> 8;
+        }
+    }
+    for (mut i: i64 = 0; i < size; i = i + 1) { image[4096 + i] = text[i]; }
+    fs::write_bytes_new("pair.elf", image, 4096 + 65536);
+}

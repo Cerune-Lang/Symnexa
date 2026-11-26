@@ -16,7 +16,20 @@ def assemble(args, source, defines, obj):
                     "-c", HERE / source, "-o", obj], check=True)
 
 
-def compare(args, root, case, objects, program, symbol, main_offset, field, displacement, errors=None):
+def rx_segment(image):
+    ident, kind, machine, version, entry, phoff, _, _, ehsize, stride, count, *_ = struct.unpack_from(
+        "<16sHHIQQQIHHHHHH", image)
+    if (ident[:7], kind, machine, version, ehsize, stride) != (b"\x7fELF\x02\x01\x01", 2, 62, 1, 64, 56):
+        raise ValueError("expected a little-endian x86-64 ELF64 executable")
+    segments = [struct.unpack_from("<II6Q", image, phoff + i * stride) for i in range(count)]
+    (rx,) = [segment for segment in segments if segment[:2] == (1, 5)]
+    _, _, offset, address, _, size, _, _ = rx
+    if offset + size > len(image) or not address <= entry < address + size:
+        raise ValueError("entry or executable segment outside image")
+    return entry, rx, image[offset:offset + size]
+
+
+def compare(args, root, case, objects, program, symbol, main_offset, field, displacement, errors=None, image_error=None):
     elf = root / "rust.elf"
     rust = subprocess.run([args.symnexa, "link", "--liseos", "-o", elf, *objects],
                           capture_output=True, text=True)
@@ -54,6 +67,21 @@ def compare(args, root, case, objects, program, symbol, main_offset, field, disp
                 raise RuntimeError(f"{case}/{command}: expected rejection, got {result.stdout!r}")
         elif result.stdout.splitlines() != [str(entry), str(displacement)] or output.read_bytes() != text:
             raise RuntimeError(f"{case}/{command}: entry, displacement or text differs: {result.stdout!r}")
+        if program == "pair.ceru":
+            result = subprocess.run([args.cerune, command, HERE / "pair_exec.ceru", *options,
+                                     "--file-root", files], check=True, capture_output=True, text=True)
+            image = files / "pair.elf"
+            expected_error = errors[1] if errors else image_error
+            if expected_error:
+                if result.stdout.splitlines() != expected_error.splitlines() or image.exists():
+                    raise RuntimeError(f"{case}/{command}: expected image rejection, got {result.stdout!r}")
+            else:
+                raw = image.read_bytes()
+                actual = rx_segment(raw)
+                if actual != rx_segment(elf.read_bytes()) or result.stdout.splitlines() != [str(entry), str(displacement)]:
+                    raise RuntimeError(f"{case}/{command}: ELF entry, RX header, payload or printed values differ")
+                if struct.unpack_from("<H", raw, 56)[0] != 1 or len(raw) != 4096 + len(text):
+                    raise RuntimeError(f"{case}/{command}: expected a single code segment")
     if errors:
         print(f"{case}: Rust and all four Cerune routes rejected the relocation")
     else:
@@ -92,6 +120,7 @@ def main():
     for case, reverse, reference, definition, flags, errors in [
         ("external", False, "answer", "answer", [], None),
         ("reversed", True, "other_symbol", "other_symbol", [], None),
+        ("extra-data", False, "answer", "answer", ["-DEXTRA_DATA"], None),
         ("weak", False, "answer", "answer", ["-DWEAK"], None),
         ("missing", False, "answer", "answer_extra", [], missing),
         ("local", False, "answer", "answer", ["-DLOCAL"], missing),
@@ -105,7 +134,8 @@ def main():
             assemble(args, "provider.S", [f"-DDEF={definition}", *flags], provider)
             main_offset, field, displacement = (9, 10, -11) if reverse else (1, 2, 13)
             compare(args, root, case, [first, second], "pair.ceru", reference,
-                    main_offset, field, displacement, errors)
+                    main_offset, field, displacement, errors,
+                    image_error="expected only text in the load image" if case == "extra-data" else None)
 
 
 if __name__ == "__main__":

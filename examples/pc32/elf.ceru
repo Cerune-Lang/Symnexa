@@ -1,4 +1,5 @@
 import "std:fs::bytes" as fs;
+import "image.ceru" as image;
 
 pub fn le(data: [u8], at: i64, width: i64) -> u64 {
     mut n: u64 = 0;
@@ -93,7 +94,7 @@ pub fn inspect(data: [u8]) -> Inspection {
         text: text, has_rela: rela_index != 0, rela: rela, sym: sym, names: names } };
 }
 
-pub fn save_pc32(bytes: [u8], place: u64, delta: i64, addend: i64, main_offset: u64) -> void {
+pub fn save_pc32(bytes: [u8], place: u64, delta: i64, addend: i64, main_offset: u64, executable: bool) -> void {
     if addend < -2147483648 - delta || addend > 2147483647 - delta { print("PC32 overflow"); return; }
     displacement: i64 = delta + addend;
     mut word: i64 = displacement;
@@ -103,8 +104,12 @@ pub fn save_pc32(bytes: [u8], place: u64, delta: i64, addend: i64, main_offset: 
         patched[i64(place) + i] = u8(word & 255);
         word = word >> 8;
     }
-    fs::write_bytes_new("text.bin", patched, 65536);
+
     // LiseOS profile: image base 0xffffffff80000000; text starts one 4096-byte page later.
-    print(18446744071562067968u64 + 4096 + main_offset);
+    text_base: u64 = 18446744071562067968u64 + 4096;
+    entry: u64 = text_base + main_offset;
+    if executable { image::save(patched, entry, text_base); }
+    else { fs::write_bytes_new("text.bin", patched, 65536); }
+    print(entry);
     print(displacement);
 }

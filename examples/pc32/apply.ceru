@@ -61,7 +61,7 @@ fn apply(data: [u8], obj: elf::Object) -> void {
     addend: i64 = elf::signed64(elf::le(data, record + 16, 8));
     mut bytes: [u8] = array_repeat::<u8>(u8(0), i64(obj.text.size));
     for (mut i: i64 = 0; i < array_len(bytes); i = i + 1) { bytes[i] = data[i64(obj.text.offset) + i]; }
-    elf::save_pc32(bytes, place, delta, addend, u64(main_offset));
+    elf::save_pc32(bytes, place, delta, addend, u64(main_offset), false);
 }
 
 fn main() -> void {
